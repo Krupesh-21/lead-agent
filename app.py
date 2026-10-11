@@ -6,20 +6,27 @@ from google import genai
 from google.genai import types
 
 client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-MODEL = "gemini-2.5-flash"  # If this fails, use the current free Flash model in AI Studio.
+
+# The app tries each model in order. Add new names here if Google changes them.
+MODELS = ["gemini-3-flash-preview", "gemini-2.5-flash"]
+
 
 def search_web(query: str) -> str:
     """Search the web. Return titles, links, and short text."""
     results = DDGS().text(query, max_results=5)
     return "\n".join(f"{r['title']} | {r['href']} | {r['body']}" for r in results)
 
+
 def read_page(url: str) -> str:
     """Read a web page. Return the first 3000 characters of text."""
     try:
-        html = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}).text
+        html = requests.get(
+            url, timeout=10, headers={"User-Agent": "Mozilla/5.0"}
+        ).text
         return BeautifulSoup(html, "html.parser").get_text(" ", strip=True)[:3000]
     except Exception as e:
         return f"Error: {e}"
+
 
 SYSTEM = """You are a lead research agent for a freelance developer.
 When the user gives a company name:
@@ -36,12 +43,17 @@ company = st.text_input("Company name")
 
 if st.button("Research") and company:
     with st.spinner("The agent is working..."):
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=f"Research {company} and write a cold email.",
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM,
-                tools=[search_web, read_page],
-            ),
-        )
-    st.markdown(response.text)
+        for name in MODELS:
+            try:
+                response = client.models.generate_content(
+                    model=name,
+                    contents=f"Research {company} and write a cold email.",
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM,
+                        tools=[search_web, read_page],
+                    ),
+                )
+                st.markdown(response.text)
+                break
+            except Exception as e:
+                st.error(f"{name} failed: {e}")
